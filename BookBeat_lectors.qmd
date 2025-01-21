@@ -1,0 +1,375 @@
+---
+title: "Lektorzy i lektorki: rola płci w świecie audiobooków"
+author: "Dominika Zydorczyk"
+format: 
+  html:
+    toc: true                
+    toc-depth: 2             
+    toc-title: "Spis treści" 
+    self-contained: true 
+    embed-resources: true
+    css: styles.css
+editor: visual
+execute: 
+  echo: false               # Ukrycie kodu w wynikowym raporcie
+  warning: false            # Wyłączenie komunikatów ostrzegawczych
+  message: false            # Wyłączenie komunikatów diagnostycznych
+  freeze: auto   
+---
+
+## Cele projektu
+
+1\. Zbadanie, która płeć jest częściej wybierana jako lektor – analiza proporcji audiobooków nagranych przez kobiety i mężczyzn na przestrzeni lat.
+
+2\. Zbadanie, jak płeć lektora wpływa na popularność audiobooka (mierzona liczbą ocen).
+
+3\. Porównanie ocen lektorów męskich i kobiecych – czy odbiorcy lepiej oceniają jedną z płci?
+
+4\. Analiza rozkładu płci lektorów w różnych gatunkach literackich – czy pewne gatunki preferują mężczyzn lub kobiety jako lektorów?
+
+5\. Sprawdzenie zależności między ocenami książek a ocenami lektorów – czy lepsze książki są częściej związane z wyższymi ocenami lektorów?
+
+## Opis platformy
+
+BookBeat to platforma subskrypcyjna dedykowana miłośnikom audiobooków, uruchomiona w 2015 roku. Początkowo była dostępna jedynie dla użytkowników ze Szwecji, jednak obecnie można z niej korzystać w 30 krajach, w tym od 2019 roku również w Polsce.
+
+Biblioteka BookBeat obejmuje ponad milion tytułów w różnych językach. Wśród nich ponad 10 tysięcy polskojęzycznych audiobooków, co czyni ofertę BookBeat jedną z największych na rynku.
+
+## Opis zbioru
+
+Po przygotowaniu wszystkich zescrapowanych danych mój zbiór zawiera 8100 obserwacji opisanych w 15 kolumnach. Najważniejsze informacje to tytuł, autor, lektor, ocena książki, ocena lektora, liczba ocen książki, liczba ocen lektora, gatunek literacki, data publikacji oraz płeć lektora, na której analizie się skupiłam.
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+Data <- read_csv("BookBeat1.csv", show_col_types = FALSE)
+Data$Gender <- as.factor(Data$Gender)
+Data$Format <- as.factor(Data$Format)
+Data$Category <- as.factor(Data$Category)
+Data$Publication_Date <- as.Date(Data$Publication_Date)
+```
+
+## Która płeć jest częściej wybierana jako lektor?
+
+### Analiza proporcji audiobooków nagranych przez kobiety i mężczyzn na przestrzeni lat.
+
+```{r}
+# Konwersja Publication_Date na format daty i wyodrębnienie roku
+Data$Publication_Year <- as.numeric(format(as.Date(Data$Publication_Date, format = "%Y-%m-%d"), "%Y"))
+
+# Grupowanie danych według roku i płci
+gender_by_year <- Data %>%
+  filter(!is.na(Gender)) %>%
+  group_by(Publication_Year, Gender) %>%
+  summarise(Count = n(), .groups = "drop")
+
+# Dodanie proporcji
+gender_by_year <- gender_by_year %>%
+  group_by(Publication_Year) %>%
+  mutate(Proportion = Count / sum(Count))
+```
+
+```{r}
+# Wykres liczby audiobooków na przestrzeni lat
+gg2 <- ggplot(gender_by_year, aes(x = Publication_Year, y = Count, color = Gender, group = Gender)) +
+  geom_line(size = 1) +  
+  geom_point(size = 2) + 
+  labs(title = "Liczba audiobooków nagranych przez kobiety i mężczyzn na przestrzeni lat",
+       x = "Rok publikacji", y = "Liczba audiobooków", color = "Płeć") +
+  theme_minimal()+
+  scale_color_manual(values = c("M" = "#3A448A", "F" = "#ee7bbd", "G" = "#1fb7a9", "U"= "#e87341"))+
+  scale_x_continuous(breaks = seq(min(gender_by_year$Publication_Year), max(gender_by_year$Publication_Year), by = 2)) # Podziałka co dwa lata
+ggplotly(gg2)
+
+```
+
+Z wykresu liniowego możemy odczytać, że wzrost publikacji audiobooków nastąpił w roku 2016. Od tamtego czasu liczba publikowanych audiobooków ciągle rośnie. Tendencja wzrostowa obserwowana jest zarówno w przypadku książek czytanych przez mężczyzn jak i kobiety, jednak w latach 2022-2024 u lektorek nieco spowolnił. Zaczęło się za to pojawiać więcej audiobooków z zespołem lektorów.
+
+W każdym roku liczba audiobooków nagranych przez lektorki jest niższa niż nagranych przez mężczyzn.
+
+```{r}
+# Wykres proporcji na przestrzeni lat
+gg <- ggplot(gender_by_year, aes(x = Publication_Year, y = Proportion, fill = Gender)) +
+  geom_bar(stat = "identity", position = "fill") +  # Wykres stosowany
+  scale_y_continuous(labels = scales::percent_format()) +  # Skala w procentach
+  labs(title = "Proporcja audiobooków nagranych przez kobiety i mężczyzn na przestrzeni lat",
+       x = "Rok publikacji", y = "Proporcja", fill = "Płeć") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#3A448A", "F" = "#ee7bbd", "G" = "#1fb7a9", "U"= "#e87341"))
+
+ggplotly(gg)
+```
+
+Wszystkie audiobooki opublikowane w latach 2008, 2009 i 2014 dostępne obecnie na platformie Bookbeat zostały nagrane przez mężczyzn. Przypomnę jednak, że platforma BookBeat działa od 2015 roku, a w Polsce dostępna jest od roku 2019. Od tego czasu mężczyźni wciąż byli częściej wybierani, jednak różnica maleje w kolejnych latach.
+
+## Czy płeć lektora ma wpływ na popularność audiobooków?
+
+Porównuję liczbę ocen dla audiobooków czytanych przez poszczególne płcie, aby zobaczyć, czy zachodzi zależność między płcią lektora a popularnością audiobooka.
+
+```{r}
+# Grupowanie danych i obliczenie średniej liczby ocen dla płci
+gender_popularity <- Data %>%
+  filter(!is.na(Number_of_ratings_book)) %>% 
+  group_by(Gender) %>%
+  summarise(AvgNumBookRatings = mean(Number_of_ratings_book, na.rm = TRUE),
+            TotalNumBookRatings = sum(Number_of_ratings_book))
+print(gender_popularity)
+
+```
+
+Z powyższej tabeli widać, że najpopularniejsze książki to te, które były czytane przez zespół lektorów (G), ponieważ jedną książkę oceniło średnio ponad 700 osób. Jednak w sumie najwięcej ocen otrzymały książki czytane przez mężczyzn. Audiobooki odczytywane przez lektorki otrzymały prawie 2 razy mniej ocen.
+
+Poniżej znajduje się wykres słupkowy obrazujący średnią liczbę ocen książek w grupach lektorów.
+
+```{r}
+# Wykres słupkowy średniej liczby ocen
+ggplot(gender_popularity, aes(x = Gender, y = AvgNumBookRatings, fill = Gender)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Średnia liczba ocen audiobooków wg płci lektora",
+       x = "Płeć lektora",
+       y = "Średnia liczba ocen") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#3A448A", "F" = "#ee7bbd", "G" = "#1fb7a9", "U"= "#e87341"))
+
+```
+
+Nie odpowiada to jednak na pytanie czy książki z męskim lektorem były popularniejsze-może być to związane z większą ilością książek odczytywanych przez mężczyzn.
+
+## Porównanie ocen lektorów według płci
+
+Zestawię średnie oceny lektorów męskich i kobiecych, aby sprawdzić, która płeć jest lepiej oceniana, wykorzystując wykresy boxplot.
+
+```{r}
+# Obliczanie średnich ocen lektorów według płci
+avg_ratings <- Data %>%
+  group_by(Gender) %>%
+  summarise(AverageRating = mean(Lector_Score, na.rm = TRUE),
+            TotalNumRating = sum(Number_of_ratings_lector, na.rm = TRUE))
+
+print(avg_ratings)
+```
+
+Średnie oceny są wysokie w każdej z grup lektorów, ale najwyższe średnie oceny uzyskali lektorzy mężczyźni.
+
+Wykres typu boxplot pozwoli zobaczyć rozkład ocen lektorów w zależności od płci.
+
+```{r}
+# Tworzenie wykresu boxplot porównującego oceny lektorów według płci
+library(ggplot2)
+
+ggplot(Data, aes(x = Gender, y = Lector_Score, fill = Gender)) +
+  geom_boxplot() +
+  labs(title = "Porównanie ocen lektorów według płci", x = "Płeć lektora", y = "Oceny lektora") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#5868D1", "F" = "#ee7bbd", "G" = "#1fb7a9", "U"= "#e87341"))
+```
+
+Na wykresie wyraźnie widać że oceny lektorów męskich w większości znajdują się ponad wartością 4.5. Lektorki otrzymywały bardziej zróżnicowane oceny. W obu przypadkach widać wiele elementów odstających, ale w przypadku kobiet niższe oceny poniżej 3 pojawiają się częściej.
+
+Widać więc różnice w wartościach ocen lektorów przy podziale względem płci. Nie są one diametralne, jednak zdecydowanie można powiedzieć, że mężczyźni byli lepij oceniani.
+
+## Rozkład płci lektorów w różnych gatunkach literackich
+
+Przeanalizuję, jaka płeć jest preferowana przez wydawnictwa w poszczególnych gatunkach. Dodatkowo zbadam czy popularność audiobooków w danym gatunku koreluje z płcią lektora.
+
+**Rozkład płci w poszczególnych gatunkach**
+
+```{r}
+# Grupowanie danych według gatunku i płci
+gender_distribution <- Data %>%
+  filter(!is.na(Category) & Gender %in% c("M", "F", "G")) %>%
+  group_by(Category, Gender) %>%
+  summarise(Count = n(), .groups = "drop")
+```
+
+Na poniższym wykresie przedstawiony został procentowy rozkład płci w każdym z gatunków literackich.
+
+```{r}
+gender_distribution <- gender_distribution %>%
+  group_by(Category) %>%
+  mutate(Proportion = Count / sum(Count))
+
+# Wykres proporcji płci lektorów w różnych gatunkach literackich
+ggplot(gender_distribution, aes(x = Category, y = Proportion, fill = Gender)) +
+  geom_bar(stat = "identity", position = "fill") +  
+  coord_flip() +  
+  scale_y_continuous(labels = scales::percent_format()) +  
+  labs(title = "Proporcja płci lektorów w różnych gatunkach literackich",
+       x = "Gatunek literacki", y = "Proporcja", fill = "Płeć") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#3A448A", "F" = "#ee7bbd", "G" = "#1fb7a9"))
+```
+
+Z 14 gatunków w 8 męski głos jest zdecydowanie częściej wybierany przez wydawców. Są to w szczególności science fiction, literatura faktu, kryminały, biografie, klasyka, czyli raczej poważne lub straszne pozycje, ale także rozrywka i humor, nowele (w tym poezja i dramat) oraz fantastyka.
+
+Kobiety zostawały częściej wybierane do odczytywania książek z gatunków romans, powieści i dla młodzieży - czyli raczej lżejszych i bardziej 'emocjonalnych' pozycji.
+
+Co ciekawe w gatunku rozwój osobisty i dla dzieci nie widać znaczących dysproporcji w wyborze płci.
+
+**Analiza zależności popularności audiobooków w gatunku i płci lektora**
+
+```{r}
+# Obliczenie średniej liczby ocen w gatunkach dla płci lektora
+popularity_by_gender_genre <- Data %>%
+  filter(!is.na(Category) & !is.na(Number_of_ratings_book) & Gender %in% c("M", "F", "G")) %>%
+  group_by(Category, Gender) %>%
+  summarise(Average_Ratings = mean(Number_of_ratings_book, na.rm = TRUE),
+            Total_Ratings = sum(Number_of_ratings_book), .groups = "drop")
+
+
+```
+
+Wykres słupkowy popularności audiobooków w gatunku wg płci lektora
+
+```{r}
+# Wykres słupkowy
+ggplot(popularity_by_gender_genre, aes(x = Category, y = Average_Ratings, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Średnia liczba ocen w gatunkach wg płci lektora",
+       x = "Gatunek literacki",
+       y = "Średnia liczba ocen") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#3A448A", "F" = "#ee7bbd", "G" = "#1fb7a9")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+W gatunku Fantastyka średnio jedna książka czytana przez zespół lektorów otrzymała ponad 6000 ocen. Jest to związane z tym, że wśród tych książek pojawiły się książki z populatnych serii np. "Wiedźmin" czy "Harry Potter".
+
+```{r}
+# Wyświetlenie 10 wierszy z największą liczbą ocen
+Data %>%
+  rename(Ratings = Number_of_ratings_book) %>%  
+  select(Ratings, Title, Gender, Category) %>%  
+  arrange(desc(Ratings)) %>% 
+  slice_head(n = 10)  
+
+```
+
+Aby lepiej ocenić popularność audiobooków w poszczególnych gatunkach według płci lektora spójrzmy na wykres z pominięciem grupy lektorów.
+
+```{r}
+# Obliczenie średniej liczby ocen w gatunkach dla płci lektora
+popularity_by_gender_genre <- Data %>%
+  filter(!is.na(Category) & !is.na(Number_of_ratings_book) & Gender %in% c("M", "F")) %>%
+  group_by(Category, Gender) %>%
+  summarise(Average_Ratings = mean(Number_of_ratings_book, na.rm = TRUE),
+            Total_Ratings = sum(Number_of_ratings_book), .groups = "drop")
+```
+
+```{r}
+ggplot(popularity_by_gender_genre, aes(x = Category, y = Average_Ratings, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Średnia liczba ocen w gatunkach wg płci lektora",
+       x = "Gatunek literacki",
+       y = "Średnia liczba ocen") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#3A448A", "F" = "#ee7bbd")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Przypominam, że mężczyźni lektorzy są częściej wybierani do gatunków: science fiction, literatura faktu, kryminały, biografie, klasyka, rozrywka i humor, nowele (w tym poezja i dramat), fantastyka.
+
+Natomiast kobiety zostawały częściej wybierane do odczytywania książek z gatunków: romans, powieści i dla młodzieży.
+
+Chociaż literatura faktu jest częściej odczytywana przez mężczyzn, to książki, do których zostały wybrane lektorki okazały się chętniej słuchane przez użytkowników. Podobna sytuacja jest dla gatunku rozrywka i humor - częściej odczytywana przez mężczyzn, a średnio więcej ocen mają książki odczytywane przez kobiety.
+
+```{r}
+# Obliczenie średniej oceny w gatunkach dla płci lektora
+avg_rating_by_gender_genre <- Data %>%
+  filter(!is.na(Category) & !is.na(Book_Score) & Gender %in% c("M", "F", "G")) %>%
+  group_by(Category, Gender) %>%
+  summarise(Average_Rating = mean(Book_Score, na.rm = TRUE), .groups = "drop")
+
+```
+
+**Czy wśród średnich ocen książek w zależności od płci lektora widać podobne zależności?**
+
+```{r}
+ggplot(avg_rating_by_gender_genre, aes(x = Category, y = Average_Rating, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Średnia ocena książki w gatunkach wg płci lektora",
+       x = "Gatunek literacki",
+       y = "Średnia ocena") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#272D5C", "F" = "#C49FB7", "G"="#1fb7a9")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Jak widać książki czytane przez zespół lektorów w większości przypadków otrzymywały wyższe średnie oceny niż te czytane przez mężczyzn lub kobiety.
+
+```{r}
+# Obliczenie średniej oceny w gatunkach dla płci lektora
+avg_rating_by_gender_genre <- Data %>%
+  filter(!is.na(Category) & !is.na(Book_Score) & Gender %in% c("M", "F")) %>%
+  group_by(Category, Gender) %>%
+  summarise(Average_Rating = mean(Book_Score, na.rm = TRUE), .groups = "drop")
+```
+
+```{r}
+ggplot(avg_rating_by_gender_genre, aes(x = Category, y = Average_Rating, fill = Gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Średnia ocena książki w gatunkach wg płci lektora",
+       x = "Gatunek literacki",
+       y = "Średnia ocena") +
+  theme_minimal()+
+  scale_fill_manual(values = c("M" = "#3A448A", "F" = "#ee7bbd")) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Aby lepiej zilustrować różnice między lektorami i lektorkami pominęłam średnie oceny książek z zespołem lektorów. W każdej grupie oceny są bardzo wysokie - zawsze powyżej 4. Różnice między ocenami są bardzo niewielkie, jednak w większości przypadków audiobooki z męskimi lektorami były nieco lepiej oceniane.
+
+## Zależność między ocenami książek a ocenami lektorów
+
+### Czy lepiej oceniane książki mają wyższe oceny lektorów?
+
+Przede wszystkim, obliczymy współczynnik korelacji między ocenami książek a ocenami lektorów, aby zobaczyć, czy istnieje silna zależność.
+
+```{r}
+# Obliczanie współczynnika korelacji między ocenami książek a ocenami lektorów
+correlation <- cor(Data$Book_Score, Data$Lector_Score, use = "complete.obs")
+print(paste("Współczynnik korelacji: ", correlation))
+
+```
+
+Wskaźnik korelacji wynosi około 0.63, co oznacza, że istnieje niezbyt wysoka korelacja pozytywna
+
+Poniżej znajduje się wykres punktowy z linią trendu, który ilustruje tę zależność.
+
+```{r}
+# Tworzenie wykresu punktowego z linią trendu
+
+ggplot(Data, aes(x = Book_Score, y = Lector_Score)) +
+  geom_point(color = "#3A448A", alpha = 0.6) +  
+  geom_smooth(method = "lm", se = FALSE, color = "#ee7bbd") +  
+  scale_x_continuous(limits = c(1, NA)) + 
+  scale_y_continuous(limits = c(1, NA)) +  
+  labs(title = "Zależność liniowa między ocenami książek a ocenami lektorów",
+       x = "Oceny książek", y = "Oceny lektorów") +
+  theme_minimal()
+```
+
+Nachylenie prostej jest dodatnie, co oznacza, że wyższe oceny książek są związane z wyższymi ocenami lektorów.
+
+Lektorzy słabo ocenianych książek nie dostawali najwyższych ocen. Jedynie dla książek o ocenach powyżej 4, lektorzy otrzymywali oceny równe 5.
+
+## Podsumowanie
+
+Dzięki przeprowadzonej analizie możliwe było zaobserwowanie wpływu płci lektora na jego "pozycję" w świecie audiobooków. Udało się udzielić odpowiedzi na niektóre z pytań badawczych:
+
+1\. Która płeć jest częściej wybierana jako lektor?\
+Najczęściej wybierani lektorzy są płci męskiej i choć liczba publikowanych audiobooków w każdym roku wzrasta to ta tendencja pozostaje niezmienna.
+
+2\. Jak płeć lektora wpływa na popularność audiobooka (mierzona liczbą ocen)?\
+Nie udało się powiedzieć czy płeć lektora ma wpływ na popularność audiobooka, choć częściej słuchane i oceniane są książki czytane przez mężczyzn. Jednak duża dysproporcja w liczbie ocen może być spowodowana różnicą w liczbie dostępnych audiobooków z lektorami męskimi i kobiecymi.
+
+3\. Czy odbiorcy lepiej oceniają jedną z płci?\
+Różnice w ocenach płci są niewielkie jednak można powiedzieć, że mężczyźni są lepiej oceniani od kobiet.
+
+4\. Czy pewne gatunki preferują mężczyzn lub kobiety jako lektorów?\
+Zdecydowanie widoczne są preferencje wydawców co do płci lektorów szczególnie w gatunkach takich jak kryminał, fantastyka, romanse. Jednak nie zawsze wybory te pokrywają się z upodobaniami czytelników.
+
+5\. Czy lepsze książki są częściej związane z wyższymi ocenami lektorów?\
+Występuje pewna zależność, jednak nie jest ona znacząca.

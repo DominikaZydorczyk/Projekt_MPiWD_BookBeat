@@ -1,0 +1,14 @@
+body {
+  background-color: #F8F9FA; /* Kolor tła dla całego dokumentu */
+  color: #333;              /* Kolor tekstu */
+}
+
+pre {
+  background-color: #white; /* Kolor tła dla bloków kodu */
+  border: 1px solid #ccc;
+}
+
+code {
+  background-color: #f9f9f9;    /* Kolor tła dla fragmentów kodu w tekście */
+  border: 1px solid #ccc;
+}
